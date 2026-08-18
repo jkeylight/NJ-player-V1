@@ -1,0 +1,13 @@
+# Generated / downloaded
+nj-player/mpv/
+nj-player/mpv.exe
+nj-player/library/
+nj-player/.thumbs/
+nj-player/.last-folder.txt
+nj-player/watch_later/
+nj-player/tmp-test.mp4
+
+# IDE / OS
+.freebuff/
+thumbs.db
+.DS_Store
