@@ -66,7 +66,7 @@ The **Library** (`nj-player/library/` folder, button at the top of the GUI) stor
 2. Click **Download** — NJ Player downloads it as a Full HD 1080p H.264 MP4 into the Library
 3. The status line shows progress; the list refreshes automatically when done
 
-One download at a time. Playlist links save only the first video.
+**Playlist downloads work too** — paste a YouTube playlist URL and click Download. All videos in the playlist are downloaded as individual MP4s into the Library. One download at a time.
 
 ---
 
@@ -97,6 +97,18 @@ powershell -ExecutionPolicy Bypass -File nj-player/desktop-shortcut.ps1
 Puts an **NJ Player** icon on your Desktop (launches the GUI). Remove with `-Remove`.
 
 ---
+
+## Playlist queue
+
+Queue up multiple videos to play in sequence without stopping between each one.
+
+1. Select a video in the list
+2. Click **Add to Queue** (or select multiple videos and add them one by one)
+3. The **Queue** panel below the video list shows all queued videos
+4. Click **Play Queue** to play them all in order
+5. Use **Remove** or **Clear** to manage the queue
+
+mpv plays the queue as a playlist — you get seek-next/previous controls and can jump between videos.
 
 ## All hotkeys
 

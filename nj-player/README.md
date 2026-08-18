@@ -89,7 +89,7 @@ The **Library** (`library/` folder, button at the top of the GUI) is where NJ Pl
 2. Click **Download** — NJ Player downloads it as an MP4 into the Library
 3. The status line shows progress; when it's done, the video appears in the Library (the list refreshes automatically)
 
-Downloads are **Full HD 1080p H.264 MP4s** — NJ Player picks the best H.264 video stream up to 1080p plus its audio and merges them into one MP4 (using the bundled ffmpeg), so files play on any machine and the enhancement presets apply exactly like local files. One download at a time; if the link is a playlist, only the first video is saved.
+Downloads are **Full HD 1080p H.264 MP4s** — NJ Player picks the best H.264 video stream up to 1080p plus its audio and merges them into one MP4 (using the bundled ffmpeg), so files play on any machine and the enhancement presets apply exactly like local files. **Playlist links work too** — paste a YouTube playlist URL and all videos are downloaded as individual MP4s. One download at a time.
 
 ## Launcher GUI (`NJ-Player-GUI.bat`)
 
@@ -103,9 +103,23 @@ A small window that scans a folder for your videos and plays them with one click
 - **Browse...** to point it at any folder (it remembers your last folder)
 - **Enhancement dropdown** — Off / Lucid / Cinema / Anime4K, Cinema is the default
 - **PLAY** or double-click a video to launch NJ Player with the chosen preset
+- **Add to Queue** — queue up multiple videos to play in sequence
+- **Queue panel** — see all queued videos, remove/clear/play them
 - Status line tells you what's playing and with which preset
 
 It's pure Windows PowerShell (WinForms) — no extra installs, works offline. The window can stay open while videos play; close it anytime.
+
+## Playlist queue
+
+Queue up multiple videos to play in sequence without stopping between each one:
+
+1. Select a video in the list
+2. Click **Add to Queue** — the video appears in the Queue panel below
+3. Add as many videos as you like (from any folder)
+4. Click **Play Queue** to play them all in order
+5. Use **Remove** or **Clear** to manage the queue
+
+mpv plays the queue as a playlist — you get seek-next/previous controls and can jump between videos.
 
 ## History & privacy
 

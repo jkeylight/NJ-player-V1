@@ -49,9 +49,81 @@ if ($thumbCount -gt 200) {
     Get-ChildItem -Path $ThumbDir -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
 }
 
-# ------------------------------------------------------------
-# Helpers
-# ------------------------------------------------------------
+# ============================================================
+#  Playlist queue
+# ============================================================
+$script:Playlist = [System.Collections.ArrayList]::new()
+
+function Add-ToQueue($item) {
+    $file = if ($item.File) { $item.File } else { $item }
+    # Avoid duplicates by full path
+    foreach ($existing in $script:Playlist) {
+        if ($existing.FullName -ieq $file.FullName) {
+            Set-Status ($file.Name + " is already in the queue.") ([System.Drawing.Color]::FromArgb(255, 255, 200, 120))
+            return
+        }
+    }
+    [void]$script:Playlist.Add($file)
+    Refresh-QueueList
+    Set-Status ($file.Name + " added to queue. ($($script:Playlist.Count) videos)") ([System.Drawing.Color]::FromArgb(255, 170, 210, 170))
+}
+
+function Remove-FromQueue {
+    if (-not $queueList.SelectedItem) { return }
+    $idx = $queueList.SelectedIndex
+    $name = $queueList.SelectedItem.Name
+    $script:Playlist.RemoveAt($idx)
+    Refresh-QueueList
+    Set-Status ($name + " removed from queue.") ([System.Drawing.Color]::FromArgb(255, 170, 210, 170))
+}
+
+function Clear-Queue {
+    $script:Playlist.Clear()
+    Refresh-QueueList
+    Set-Status "Queue cleared." ([System.Drawing.Color]::FromArgb(255, 170, 210, 170))
+}
+
+function Refresh-QueueList {
+    $queueList.Items.Clear()
+    $i = 1
+    foreach ($f in $script:Playlist) {
+        [void]$queueList.Items.Add([pscustomobject]@{ Name = "$i. $($f.Name)"; File = $f })
+        $i++
+    }
+    $queueLabel.Text = "Queue ($($script:Playlist.Count))"
+}
+
+function Play-Queue {
+    if ($script:Playlist.Count -eq 0) {
+        Set-Status "Queue is empty. Select videos and click Add to Queue." ([System.Drawing.Color]::FromArgb(255, 255, 200, 120))
+        return
+    }
+    if (-not (Test-Path $MpvExe)) {
+        Set-Status "mpv not found - run install.ps1 first (see README)." ([System.Drawing.Color]::FromArgb(255, 255, 120, 120))
+        return
+    }
+    # Write a temporary M3U playlist file
+    $playlistFile = Join-Path $Root ".playlist.m3u"
+    $lines = @("#EXTM3U")
+    foreach ($f in $script:Playlist) {
+        $lines += $f.FullName
+    }
+    $lines -join "`r`n" | Set-Content -Path $playlistFile -Encoding UTF8
+
+    $preset = $Presets[$presetCombo.SelectedIndex].Profile
+    $cmd = "--config-dir=$ConfigDir --profile=$preset `"$playlistFile`""
+    try {
+        [void][System.Diagnostics.Process]::Start($MpvExe, $cmd)
+        Save-LastFolder $folderBox.Text
+        Set-Status ("Playing queue: $($script:Playlist.Count) videos  [" + $preset + "]") ([System.Drawing.Color]::FromArgb(255, 170, 210, 170))
+    } catch {
+        Set-Status ("Could not launch player: " + $_.Exception.Message) ([System.Drawing.Color]::FromArgb(255, 255, 120, 120))
+    }
+}
+
+# ============================================================
+#  Helpers
+# ============================================================
 function Get-Videos([string]$dir, [bool]$recursive) {
     if (-not (Test-Path $dir)) { return @() }
     $params = @{ Path = $dir; File = $true; ErrorAction = "SilentlyContinue" }
@@ -114,6 +186,9 @@ function Refresh-VideoList() {
     }
 }
 
+# ============================================================
+#  Download (supports both single videos and playlists)
+# ============================================================
 $script:DlJob = $null
 
 function Start-Download {
@@ -136,10 +211,8 @@ function Start-Download {
     $psi.FileName = $YtDlp
     # FULL HD (1080p): best H.264 video up to 1080p + audio, merged by ffmpeg
     $fmt = "bestvideo[ext=mp4][vcodec^=avc1][height<=1080]+bestaudio[ext=m4a]/bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-    $psi.Arguments = '--no-playlist --no-mtime -f "' + $fmt + '" --merge-output-format mp4 --ffmpeg-location "' + (Split-Path $MpvExe -Parent) + '" -o "' + $LibraryDir + '\%(title)s.%(ext)s" --no-progress "' + $url + '"'
-    # No output redirection: PS 5.1 event-handler scriptblocks can kill the
-    # runspace when fired on background threads. yt-dlp with --no-progress
-    # writes only a few lines, which go to the hidden console harmlessly.
+    # NOTE: no --no-playlist so yt-dlp can download entire playlists
+    $psi.Arguments = '--no-mtime -f "' + $fmt + '" --merge-output-format mp4 --ffmpeg-location "' + (Split-Path $MpvExe -Parent) + '" -o "' + $LibraryDir + '\%(title)s.%(ext)s" --no-progress "' + $url + '"'
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
     try {
@@ -162,7 +235,7 @@ function Tick-Download {
             Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
         if ($newest) {
             Set-Status ("Saved to library: " + $newest.Name) ([System.Drawing.Color]::FromArgb(255, 170, 210, 170))
-            if ($folderBox.Text.TrimEnd("\\") -ieq $LibraryDir) { Refresh-VideoList }
+            if ($folderBox.Text.TrimEnd("\") -ieq $LibraryDir) { Refresh-VideoList }
         } else {
             Set-Status "Download finished but no file found in library." ([System.Drawing.Color]::FromArgb(255, 255, 200, 120))
         }
@@ -235,9 +308,9 @@ function Play-Video($item) {
     }
 }
 
-# ------------------------------------------------------------
-# Thumbnail preview
-# ------------------------------------------------------------
+# ============================================================
+#  Thumbnail preview
+# ============================================================
 $script:ThumbJob = $null
 $script:ThumbGen = 0
 
@@ -332,9 +405,9 @@ function Tick-Thumbnail {
     Remove-Item $job.Tmp -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# ------------------------------------------------------------
+# ============================================================
 # Build the form
-# ------------------------------------------------------------
+# ============================================================
 $dark    = [System.Drawing.Color]::FromArgb(255, 30, 30, 34)
 $dark2   = [System.Drawing.Color]::FromArgb(255, 45, 45, 52)
 $text    = [System.Drawing.Color]::FromArgb(255, 225, 225, 228)
@@ -345,10 +418,10 @@ $hint    = [System.Drawing.Color]::FromArgb(255, 140, 140, 150)
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "NJ Player"
-$form.Size = New-Object System.Drawing.Size(920, 560)
+$form.Size = New-Object System.Drawing.Size(920, 700)
 $form.StartPosition = "CenterScreen"
 $form.BackColor = $dark
-$form.MinimumSize = New-Object System.Drawing.Size(720, 460)
+$form.MinimumSize = New-Object System.Drawing.Size(720, 600)
 $NjIco = Join-Path $Root "nj-player.ico"
 if (Test-Path $NjIco) {
     try {
@@ -431,7 +504,7 @@ $browseBtn.Add_Click({
 # --- middle: video list ---
 $videoList = New-Object System.Windows.Forms.ListBox
 $videoList.Location = New-Object System.Drawing.Point(12, 48)
-$videoList.Size = New-Object System.Drawing.Size(680, 404)
+$videoList.Size = New-Object System.Drawing.Size(680, 300)
 $videoList.BackColor = $dark2
 $videoList.ForeColor = $text
 $videoList.BorderStyle = "FixedSingle"
@@ -489,9 +562,19 @@ $playBtn.FlatStyle = "Flat"
 $playBtn.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
 $playBtn.Add_Click({ Play-Video $videoList.SelectedItem })
 
+# --- Add to Queue button ---
+$addQueueBtn = New-Object System.Windows.Forms.Button
+$addQueueBtn.Text = "Add to Queue"
+$addQueueBtn.Location = New-Object System.Drawing.Point(700, 310)
+$addQueueBtn.Size = New-Object System.Drawing.Size(200, 28)
+$addQueueBtn.BackColor = $dark2
+$addQueueBtn.ForeColor = $text
+$addQueueBtn.FlatStyle = "Flat"
+$addQueueBtn.Add_Click({ Add-ToQueue $videoList.SelectedItem })
+
 $openBtn = New-Object System.Windows.Forms.Button
 $openBtn.Text = "Open Folder"
-$openBtn.Location = New-Object System.Drawing.Point(700, 310)
+$openBtn.Location = New-Object System.Drawing.Point(700, 346)
 $openBtn.Size = New-Object System.Drawing.Size(200, 28)
 $openBtn.BackColor = $dark2
 $openBtn.ForeColor = $text
@@ -502,7 +585,7 @@ $openBtn.Add_Click({
 
 $refreshBtn = New-Object System.Windows.Forms.Button
 $refreshBtn.Text = "Refresh"
-$refreshBtn.Location = New-Object System.Drawing.Point(700, 346)
+$refreshBtn.Location = New-Object System.Drawing.Point(700, 382)
 $refreshBtn.Size = New-Object System.Drawing.Size(200, 28)
 $refreshBtn.BackColor = $dark2
 $refreshBtn.ForeColor = $text
@@ -511,22 +594,69 @@ $refreshBtn.Add_Click({ Refresh-VideoList })
 
 $clearBtn = New-Object System.Windows.Forms.Button
 $clearBtn.Text = "Clear History"
-$clearBtn.Location = New-Object System.Drawing.Point(700, 382)
+$clearBtn.Location = New-Object System.Drawing.Point(700, 418)
 $clearBtn.Size = New-Object System.Drawing.Size(200, 28)
 $clearBtn.BackColor = $dark2
 $clearBtn.ForeColor = $text
 $clearBtn.FlatStyle = "Flat"
 $clearBtn.Add_Click({ Clear-History })
 
+# ============================================================
+#  Queue panel (below video list)
+# ============================================================
+$queueLabel = New-Object System.Windows.Forms.Label
+$queueLabel.Text = "Queue (0)"
+$queueLabel.Location = New-Object System.Drawing.Point(12, 356)
+$queueLabel.Size = New-Object System.Drawing.Size(200, 22)
+$queueLabel.ForeColor = $accent
+$queueLabel.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+
+$queueList = New-Object System.Windows.Forms.ListBox
+$queueList.Location = New-Object System.Drawing.Point(12, 380)
+$queueList.Size = New-Object System.Drawing.Size(520, 140)
+$queueList.BackColor = $dark2
+$queueList.ForeColor = $text
+$queueList.BorderStyle = "FixedSingle"
+$queueList.HorizontalScrollbar = $true
+$queueList.DisplayMember = "Name"
+
+$playQueueBtn = New-Object System.Windows.Forms.Button
+$playQueueBtn.Text = "Play Queue"
+$playQueueBtn.Location = New-Object System.Drawing.Point(540, 380)
+$playQueueBtn.Size = New-Object System.Drawing.Size(152, 36)
+$playQueueBtn.BackColor = $accent
+$playQueueBtn.ForeColor = [System.Drawing.Color]::White
+$playQueueBtn.FlatStyle = "Flat"
+$playQueueBtn.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+$playQueueBtn.Add_Click({ Play-Queue })
+
+$removeQueueBtn = New-Object System.Windows.Forms.Button
+$removeQueueBtn.Text = "Remove"
+$removeQueueBtn.Location = New-Object System.Drawing.Point(540, 422)
+$removeQueueBtn.Size = New-Object System.Drawing.Size(74, 28)
+$removeQueueBtn.BackColor = $dark2
+$removeQueueBtn.ForeColor = $text
+$removeQueueBtn.FlatStyle = "Flat"
+$removeQueueBtn.Add_Click({ Remove-FromQueue })
+
+$clearQueueBtn = New-Object System.Windows.Forms.Button
+$clearQueueBtn.Text = "Clear"
+$clearQueueBtn.Location = New-Object System.Drawing.Point(620, 422)
+$clearQueueBtn.Size = New-Object System.Drawing.Size(72, 28)
+$clearQueueBtn.BackColor = $dark2
+$clearQueueBtn.ForeColor = $text
+$clearQueueBtn.FlatStyle = "Flat"
+$clearQueueBtn.Add_Click({ Clear-Queue })
+
 # --- bottom: link bar ---
 $linkLabel = New-Object System.Windows.Forms.Label
 $linkLabel.Text = "Link:"
-$linkLabel.Location = New-Object System.Drawing.Point(12, 462)
+$linkLabel.Location = New-Object System.Drawing.Point(12, 536)
 $linkLabel.Size = New-Object System.Drawing.Size(40, 26)
 $linkLabel.ForeColor = $text
 
 $linkBox = New-Object System.Windows.Forms.TextBox
-$linkBox.Location = New-Object System.Drawing.Point(54, 459)
+$linkBox.Location = New-Object System.Drawing.Point(54, 533)
 $linkBox.Size = New-Object System.Drawing.Size(590, 26)
 $linkBox.BackColor = $dark2
 $linkBox.ForeColor = $text
@@ -539,7 +669,7 @@ $linkBox.Add_KeyDown({
 
 $playLinkBtn = New-Object System.Windows.Forms.Button
 $playLinkBtn.Text = "Play Link"
-$playLinkBtn.Location = New-Object System.Drawing.Point(650, 458)
+$playLinkBtn.Location = New-Object System.Drawing.Point(650, 532)
 $playLinkBtn.Size = New-Object System.Drawing.Size(120, 28)
 $playLinkBtn.BackColor = $dark2
 $playLinkBtn.ForeColor = $text
@@ -548,7 +678,7 @@ $playLinkBtn.Add_Click({ Play-Link })
 
 $downloadBtn = New-Object System.Windows.Forms.Button
 $downloadBtn.Text = "Download"
-$downloadBtn.Location = New-Object System.Drawing.Point(776, 458)
+$downloadBtn.Location = New-Object System.Drawing.Point(776, 532)
 $downloadBtn.Size = New-Object System.Drawing.Size(120, 28)
 $downloadBtn.BackColor = $dark2
 $downloadBtn.ForeColor = $text
@@ -557,7 +687,7 @@ $downloadBtn.Add_Click({ Start-Download })
 
 # --- bottom: status ---
 $statusLabel = New-Object System.Windows.Forms.Label
-$statusLabel.Location = New-Object System.Drawing.Point(12, 496)
+$statusLabel.Location = New-Object System.Drawing.Point(12, 570)
 $statusLabel.Size = New-Object System.Drawing.Size(890, 22)
 $statusLabel.ForeColor = $ok
 $statusLabel.Text = "Ready. Choose a folder to see your videos."
@@ -570,12 +700,13 @@ $thumbTimer.Start()
 
 $form.Controls.AddRange(@($folderLabel, $folderBox, $dlBtn, $vidBtn, $deskBtn, $libBtn, $browseBtn,
                           $videoList, $previewBox, $previewHint, $presetLabel, $presetCombo,
-                          $recursiveCheck, $playBtn, $openBtn, $refreshBtn, $clearBtn, $linkLabel,
-                          $linkBox, $playLinkBtn, $downloadBtn, $statusLabel))
+                          $recursiveCheck, $playBtn, $addQueueBtn, $openBtn, $refreshBtn, $clearBtn,
+                          $queueLabel, $queueList, $playQueueBtn, $removeQueueBtn, $clearQueueBtn,
+                          $linkLabel, $linkBox, $playLinkBtn, $downloadBtn, $statusLabel))
 
-# ------------------------------------------------------------
+# ============================================================
 # Run
-# ------------------------------------------------------------
+# ============================================================
 $form.Add_Shown({
     $folderBox.Text = Load-LastFolder
     Refresh-VideoList
