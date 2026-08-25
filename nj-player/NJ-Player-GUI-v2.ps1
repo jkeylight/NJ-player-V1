@@ -6,11 +6,38 @@
 #  Launch:  double-click NJ-Player-GUI.bat
 # ============================================================
 
-param([switch]$SelfTest)
+param(
+    [switch]$SelfTest,
+    [string]$FilePath
+)
 
 $ErrorActionPreference = "Stop"
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
+
+# Load assemblies FIRST, before any trap that might use them
+try {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+} catch {
+    # If we can't even load WinForms, log to file and exit
+    $logDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+    $logFile = Join-Path $logDir "gui-v2-error.log"
+    $msg = "Failed to load Windows Forms: $($_.Exception.Message)"
+    Add-Content -Path $logFile -Value ("{0} :: {1}" -f (Get-Date), $msg) -ErrorAction SilentlyContinue
+    Write-Host $msg -ForegroundColor Red
+    exit 1
+}
+
+# Global error trap: never die silently. Log + show the error.
+# (The launcher runs hidden, so a silent crash looks like "GUI won't open".)
+trap {
+    $logDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+    $logFile = Join-Path $logDir "gui-v2-error.log"
+    try {
+        Add-Content -Path $logFile -Value ("{0} :: {1}" -f (Get-Date), ($_ | Out-String)) -ErrorAction SilentlyContinue
+        [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, "NJ Player error") | Out-Null
+    } catch { }
+    continue
+}
 
 # ============================================================
 #  DESIGN TOKENS (from DESIGN-SYSTEM.md)
@@ -116,9 +143,11 @@ function Update-Animations {
         
         $current = [int]($anim.StartValue + ($anim.TargetValue - $anim.StartValue) * $t)
         
-        try {
-            $anim.Control.($anim.Property) = $current
-        } catch { }
+        if ($anim.Control) {
+            try {
+                $anim.Control.($anim.Property) = $current
+            } catch { }
+        }
         
         if ($progress -ge 1.0) {
             $completed += $anim
@@ -129,6 +158,10 @@ function Update-Animations {
         $script:Animations = $script:Animations | Where-Object { $_ -ne $c }
     }
 }
+
+# Shared tooltip (a tooltip created inside a function gets garbage-collected)
+$script:NjTip = New-Object System.Windows.Forms.ToolTip
+$script:NjTip.InitialDelay = 400
 
 # ============================================================
 #  PLATFORM CONTROLS (Custom Drawn)
@@ -185,33 +218,40 @@ function New-NjButton {
     $btn.Cursor = [System.Windows.Forms.Cursors]::Hand
     
     # Hover state tracking
+    # NOTE: use the $s (sender) parameter inside event handlers —
+    # $btn is local to this function and is gone by the time events fire.
     $btn.Tag = @{ BgColor = $BgColor; IsAccent = $IsAccent; Hovered = $false }
     
     $btn.Add_MouseEnter({
-        $btn.Tag.Hovered = $true
-        if ($btn.Tag.IsAccent) {
-            $btn.BackColor = $ACCENT
-            $btn.ForeColor = $INK
+        param($s, $e)
+        $t = $s.Tag
+        $t.Hovered = $true
+        if ($t.IsAccent) {
+            $s.BackColor = $ACCENT
+            $s.ForeColor = $INK
         } else {
-            $btn.BackColor = $SURFACE_HVR
+            $s.BackColor = $SURFACE_HVR
         }
-        $btn.FlatAppearance.BorderColor = $ACCENT
+        $s.FlatAppearance.BorderColor = $ACCENT
     })
     
     $btn.Add_MouseLeave({
-        $btn.Tag.Hovered = $false
-        $btn.BackColor = $btn.Tag.BgColor
-        if ($btn.Tag.IsAccent) {
-            $btn.ForeColor = $INK
+        param($s, $e)
+        $t = $s.Tag
+        $t.Hovered = $false
+        $s.BackColor = $t.BgColor
+        if ($t.IsAccent) {
+            $s.ForeColor = $INK
         } else {
-            $btn.ForeColor = $TEXT_PRIMARY
+            $s.ForeColor = $TEXT_PRIMARY
         }
-        $btn.FlatAppearance.BorderColor = [System.Drawing.Color]::Transparent
+        # Can't set BorderColor to Transparent on ButtonBase controls
+        # Use the background color instead to "hide" the border
+        $s.FlatAppearance.BorderColor = $t.BgColor
     })
     
     if ($Tooltip) {
-        $tip = New-Object System.Windows.Forms.ToolTip
-        $tip.SetToolTip($btn, $Tooltip)
+        $script:NjTip.SetToolTip($btn, $Tooltip)
     }
     
     return $btn
@@ -386,6 +426,7 @@ function Refresh-VideoList() {
 $script:Playlist = [System.Collections.ArrayList]::new()
 
 function Add-ToQueue($item) {
+    if (-not $item) { Set-Status "Select a video first" $WARNING; return }
     $file = if ($item.File) { $item.File } else { $item }
     foreach ($existing in $script:Playlist) {
         if ($existing.FullName -ieq $file.FullName) {
@@ -575,22 +616,33 @@ function Get-ThumbPath($file) {
 }
 
 function Set-PreviewHint([string]$text) {
-    $previewHint.Text = $text
-    $previewHint.Visible = $true
+    if (-not $script:previewHint) { return }
+    $script:previewHint.Text = $text
+    $script:previewHint.Visible = $true
 }
 
 function Clear-Preview() {
-    if ($previewBox.Image) { $previewBox.Image.Dispose(); $previewBox.Image = $null }
-    $previewHint.Visible = $true
+    if (-not $script:previewBox) { return }
+    if ($script:previewBox.Image) { $script:previewBox.Image.Dispose(); $script:previewBox.Image = $null }
+    if ($script:previewBox.Tag -is [System.IDisposable]) { $script:previewBox.Tag.Dispose(); $script:previewBox.Tag = $null }
+    $script:previewHint.Visible = $true
 }
 
 function Load-PreviewImage([string]$path) {
+    if (-not $script:previewBox) { return }
     try {
-        $img = [System.Drawing.Image]::FromFile($path)
-        if ($previewBox.Image) { $previewBox.Image.Dispose() }
-        $previewBox.Image = $img
-        $previewBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
-        $previewHint.Visible = $false
+        # Load through a MemoryStream so the jpg file is NOT locked
+        # (Image.FromFile keeps the file locked until the image is disposed,
+        #  which breaks moving a freshly generated thumbnail onto the cache).
+        $bytes = [System.IO.File]::ReadAllBytes($path)
+        $ms = New-Object System.IO.MemoryStream (,$bytes)
+        $img = [System.Drawing.Image]::FromStream($ms)
+        if ($script:previewBox.Image) { $script:previewBox.Image.Dispose() }
+        if ($script:previewBox.Tag -is [System.IDisposable]) { $script:previewBox.Tag.Dispose() }
+        $script:previewBox.Image = $img
+        $script:previewBox.Tag = $ms   # keep the stream alive for the image's lifetime
+        $script:previewBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+        $script:previewHint.Visible = $false
     } catch {
         Set-PreviewHint "No preview"
     }
@@ -841,14 +893,14 @@ $previewPanel.Size = New-Object System.Drawing.Size(350, 200)
 $previewPanel.BackColor = $SURFACE
 $mainPanel.Controls.Add($previewPanel)
 
-$previewBox = New-Object System.Windows.Forms.PictureBox
-$previewBox.Location = New-Object System.Drawing.Point(0, 0)
-$previewBox.Size = New-Object System.Drawing.Size(350, 200)
-$previewBox.BackColor = $SURFACE
-$previewBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
-$previewPanel.Controls.Add($previewBox)
+$script:previewBox = New-Object System.Windows.Forms.PictureBox
+$script:previewBox.Location = New-Object System.Drawing.Point(0, 0)
+$script:previewBox.Size = New-Object System.Drawing.Size(350, 200)
+$script:previewBox.BackColor = $SURFACE
+$script:previewBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+$previewPanel.Controls.Add($script:previewBox)
 
-$previewHint = New-Object System.Windows.Forms.Label
+$script:previewHint = New-Object System.Windows.Forms.Label
 $previewHint.Location = New-Object System.Drawing.Point(0, 0)
 $previewHint.Size = New-Object System.Drawing.Size(350, 200)
 $previewHint.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
@@ -992,7 +1044,7 @@ $statusBar.Controls.Add($footerLabel)
 # --- TIMERS ---
 $thumbTimer = New-Object System.Windows.Forms.Timer
 $thumbTimer.Interval = 250
-$thumbTimer.Add_Tick({ Tick-Thumbnail; Tick-Download; Update-Animations })
+$thumbTimer.Add_Tick({ try { Tick-Thumbnail; Tick-Download; Update-Animations } catch { } })
 $thumbTimer.Start()
 
 # ============================================================
@@ -1004,20 +1056,31 @@ $form.Add_Shown({
     
     # Cinematic entrance animation
     $form.Opacity = 0
-    $timer = New-Object System.Windows.Forms.Timer
-    $timer.Interval = 16
-    $timer.Add_Tick({
-        $form.Opacity = [Math]::Min(1.0, $form.Opacity + 0.05)
-        if ($form.Opacity -ge 1.0) { $timer.Stop(); $timer.Dispose() }
+    $script:animTimer = New-Object System.Windows.Forms.Timer
+    $script:animTimer.Interval = 16
+    $script:animTimer.Add_Tick({
+        try {
+            $form.Opacity = [Math]::Min(1.0, $form.Opacity + 0.05)
+            if ($form.Opacity -ge 1.0) {
+                if ($script:animTimer) {
+                    $script:animTimer.Stop()
+                    $script:animTimer.Dispose()
+                    $script:animTimer = $null
+                }
+            }
+        } catch { }
     })
-    $timer.Start()
+    $script:animTimer.Start()
 })
 
 $form.Add_FormClosed({
+    $thumbTimer.Stop(); $thumbTimer.Dispose()
+    if ($script:animTimer) { try { $script:animTimer.Stop(); $script:animTimer.Dispose() } catch { } }
     if ($script:ThumbJob) {
         try { if (-not $script:ThumbJob.P.HasExited) { $script:ThumbJob.P.Kill() } } catch { }
     }
-    if ($previewBox.Image) { $previewBox.Image.Dispose() }
+    if ($script:previewBox.Image) { $script:previewBox.Image.Dispose() }
+    if ($script:previewBox.Tag -is [System.IDisposable]) { $script:previewBox.Tag.Dispose() }
 })
 
 if ($SelfTest) {
@@ -1025,6 +1088,31 @@ if ($SelfTest) {
     [void]$form.ShowDialog()
     Write-Host "GUI v2 self-test OK"
     exit 0
+}
+
+# If a file path was provided, play it directly without opening the GUI
+if ($FilePath) {
+    $FilePath = $FilePath.Trim('"')  # Remove quotes if present
+    if (-not (Test-Path $FilePath)) {
+        Write-Host "File not found: $FilePath" -ForegroundColor Red
+        exit 1
+    }
+    if (-not (Test-Path $MpvExe)) {
+        Write-Host "mpv.exe not found. Run install.ps1 first." -ForegroundColor Red
+        exit 1
+    }
+
+    # Use Cinema preset by default for single file playback
+    $preset = "nj-cinema"
+    $cmd = "--config-dir=$ConfigDir --profile=$preset `"$FilePath`""
+
+    try {
+        [void][System.Diagnostics.Process]::Start($MpvExe, $cmd)
+        exit 0
+    } catch {
+        Write-Host "Failed to launch mpv: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
+    }
 }
 
 [void]$form.ShowDialog()

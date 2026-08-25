@@ -55,6 +55,7 @@ if ($thumbCount -gt 200) {
 $script:Playlist = [System.Collections.ArrayList]::new()
 
 function Add-ToQueue($item) {
+    if (-not $item) { Set-Status "Select a video first." ([System.Drawing.Color]::FromArgb(255, 255, 200, 120)); return }
     $file = if ($item.File) { $item.File } else { $item }
     # Avoid duplicates by full path
     foreach ($existing in $script:Playlist) {
