@@ -46,6 +46,29 @@ Press **F9** to cycle enhancement presets, or **CTRL+1..3** to jump straight to 
 
 ---
 
+## Video quality controls
+
+Adjust the picture while you watch — brightness, contrast, saturation, gamma and hue:
+
+| Key | Action |
+|-----|--------|
+| `F2` | **Video quality menu** on the video — arrows to move/adjust, ENTER for actions, ESC to close |
+| `ALT+UP`/`DOWN` + `ALT+LEFT`/`RIGHT` | Quick-adjust: pick a parameter, then nudge it (±5) |
+| `ALT+0` / `ALT+B` | Reset picture / toggle the NJ color boost |
+| `F3` | **Stream quality** (web links only) — list resolutions and switch on the fly, resuming where you were |
+
+Your settings persist in `.quality.txt` and are shared with the GUI, whose **PICTURE** button (next to the enhancement preset) opens a sliders dialog for the same values.
+
+---
+
+## Right-click menu (VLC-style)
+
+**Right-click the video** for a VLC-style menu: play/pause, stop, jump, speed (0.25x–2x), A-B loop, audio (track/mute/volume/delay), video (fullscreen, always-on-top, aspect ratio, deinterlace, snapshot), subtitles (track/delay/size), video adjustments, stream quality and media info. Arrow keys navigate, `ENTER` selects, `←`/`ESC` or another right-click closes.
+
+NJ Player also honors **VLC's default shortcuts**: `v` subtitle track, `b` audio track, `a` aspect ratio, `n`/`p` next/previous, `t` show time, `g`/`h` subtitle delay, `SHIFT+s` snapshot.
+
+---
+
 ## Playing web links (YouTube, Twitch, live streams)
 
 In the GUI, paste a link into the **Link** bar at the bottom and hit **Play Link** (or press Enter). Accepted sources:
@@ -116,6 +139,17 @@ mpv plays the queue as a playlist — you get seek-next/previous controls and ca
 |-----|--------|
 | `F9` | Cycle enhancement presets |
 | `CTRL+0` / `1` / `2` / `3` | Pick preset: Off / Lucid / Cinema / Anime |
+| `F2` | Video quality menu (brightness / contrast / saturation / gamma / hue) |
+| `F3` | Stream quality menu — pick resolution for web links |
+| `ALT+UP`/`DOWN`, `ALT+LEFT`/`RIGHT` | Quick-adjust picture settings |
+| `ALT+0` / `ALT+B` | Reset picture / toggle color boost |
+| Right-click | VLC-style menu (playback, audio, video, subtitles…) |
+| `v` / `b` | Next subtitle track / next audio track (VLC keys) |
+| `a` | Cycle aspect ratio (VLC key) |
+| `n` / `p` | Next / previous in playlist (VLC keys) |
+| `t` | Show position bar + time (VLC key) |
+| `g` / `h` | Subtitle delay −0.5s / +0.5s (VLC keys) |
+| `SHIFT+s` | Take snapshot (VLC key; `s` also works) |
 | `CTRL+d` | Toggle debanding (removes color banding in dark scenes) |
 | `CTRL+SHIFT+1` | Toggle the sharpening shader on top of the current preset |
 | `CTRL+h` | Cycle hardware decoding (try if video stutters) |
@@ -142,7 +176,9 @@ nj-player/
 ├── mpv.conf                <- core config + enhancement profiles
 ├── input.conf              <- extra hotkeys
 ├── scripts/
-│   └── nj-presets.lua      <- preset switching (F9, CTRL+0..3) + resume control
+│   ├── nj-presets.lua      <- preset switching (F9, CTRL+0..3) + resume control
+│   ├── nj-quality.lua      <- video quality controls (F2, F3, ALT+arrows)
+│   └── nj-menu.lua         <- VLC-style right-click menu
 ├── mpv/                    <- mpv + yt-dlp + ffmpeg (created by install.ps1)
 ├── shaders/                <- enhancement shaders (created by install.ps1)
 │   ├── adaptive-sharpen.glsl

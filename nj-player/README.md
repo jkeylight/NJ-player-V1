@@ -36,6 +36,41 @@ An offline desktop video player for your downloaded videos, with a **"better Luc
 
 `F9` cycles through all four.
 
+## Video quality controls
+
+Adjust the picture while you watch — brightness, contrast, saturation, gamma and hue. The defaults are the NJ Player color boost (`5 / 15 / 20 / 10`); your changes are remembered in `.quality.txt` and shared with the GUI.
+
+| Key | Action |
+|-----|--------|
+| `F2` | **Video quality menu** on the video — arrows to move/adjust, ENTER for actions, ESC to close |
+| `ALT+UP` / `ALT+DOWN` | Quick mode: pick brightness / contrast / saturation / gamma / hue |
+| `ALT+LEFT` / `ALT+RIGHT` | Adjust the picked parameter (±5) — a small OSD readout shows the value |
+| `ALT+0` | Reset the picture to neutral (all zeros) |
+| `ALT+B` | Toggle the NJ color boost on/off |
+
+The menu also has **Color Boost**, **Reset Picture** and **Stream Quality** actions.
+
+**Stream quality (web links):** while a YouTube/Twitch/etc. link is playing, press `F3` to list the available resolutions (1080p, 720p, …) and switch on the fly — playback resumes where you were. Works only for links, not local files.
+
+**From the GUI:** the **PICTURE** button (next to the enhancement preset) opens a sliders dialog for the same settings. It applies to the next video you play; use `F2`/`ALT+arrows` to tweak while watching.
+
+## Right-click menu (VLC-style)
+
+**Right-click the video** and you get a VLC-style menu, navigated with the arrow keys:
+
+- **Play/Pause, Stop**
+- **Jump** — ±10 sec / ±1 min / ±5 min, chapters, playlist next/previous
+- **Speed** — 0.25x … 2.00x (current speed marked)
+- **A-B Loop** — set A/B points, clear (like VLC's A-B repeat)
+- **Audio** — next track, mute, volume, audio delay
+- **Video** — fullscreen, always-on-top, aspect ratio, deinterlace, snapshot, video adjustments
+- **Subtitles** — next track, show/hide, delay, size
+- **Video Adjustments** (opens the `F2` menu) · **Stream Quality** (`F3`) · **Media Info**
+
+Right-click again (or `ESC`) closes it; `←` goes back a level.
+
+NJ Player also honors **VLC's default shortcuts**: `v` subtitle track, `b` audio track, `a` aspect ratio, `n`/`p` next/previous, `t` show time, `g`/`h` subtitle delay, `SHIFT+s` snapshot.
+
 ## Right-click "Open with NJ Player" (Windows)
 
 Run once to add **"Open with NJ Player"** to the right-click menu of every file — right-click any video (or audio) and open it straight into NJ Player:
@@ -135,6 +170,17 @@ To wipe all of it: GUI → **Clear History** button (it asks first), or right-cl
 |-----|--------|
 | `F9` | Cycle enhancement presets |
 | `CTRL+0` / `1` / `2` / `3` | Pick preset: Off / Lucid / Cinema / Anime |
+| `F2` | Video quality menu (brightness / contrast / saturation / gamma / hue) |
+| `F3` | Stream quality menu — pick resolution for web links |
+| `ALT+UP`/`DOWN`, `ALT+LEFT`/`RIGHT` | Quick-adjust picture settings |
+| `ALT+0` / `ALT+B` | Reset picture / toggle color boost |
+| Right-click | VLC-style menu (playback, audio, video, subtitles…) |
+| `v` / `b` | Next subtitle track / next audio track (VLC keys) |
+| `a` | Cycle aspect ratio (VLC key) |
+| `n` / `p` | Next / previous in playlist (VLC keys) |
+| `t` | Show position bar + time (VLC key) |
+| `g` / `h` | Subtitle delay −0.5s / +0.5s (VLC keys) |
+| `SHIFT+s` | Take snapshot (VLC key; `s` also works) |
 | `CTRL+d` | Toggle debanding (removes color banding in dark scenes) |
 | `CTRL+SHIFT+1` | Toggle the sharpening shader on top of the current preset |
 | `CTRL+h` | Cycle hardware decoding (try if video stutters) |
@@ -148,7 +194,7 @@ Plus all the standard mpv controls: `space` play/pause, `←`/`→` seek 5s, `�
 ```
 nj-player/
 ├── NJ-Player-GUI.bat  <- launcher GUI (double-click me)
-├── NJ-Player-GUI.ps1  <- the GUI itself (PowerShell WinForms)
+├── NJ-Player-GUI-v2.ps1 <- the GUI itself (PowerShell WinForms)
 ├── NJ-Player.bat      <- drag-and-drop launcher (drag videos onto this)
 ├── associate.ps1      <- right-click "Open with NJ Player" (+ -Remove to undo)
 ├── desktop-shortcut.ps1 <- "NJ Player" desktop icon (+ -Remove to undo)
@@ -158,7 +204,9 @@ nj-player/
 ├── mpv.conf           <- core config + enhancement profiles
 ├── input.conf         <- extra hotkeys
 ├── scripts/
-│   └── nj-presets.lua <- preset switching (F9, CTRL+0..3)
+│   ├── nj-presets.lua <- preset switching (F9, CTRL+0..3)
+│   ├── nj-quality.lua <- video quality controls (F2, F3, ALT+arrows)
+│   └── nj-menu.lua    <- VLC-style right-click menu
 ├── mpv/               <- mpv + yt-dlp + ffmpeg (created by install.ps1)
 ├── library/           <- downloaded web videos (created on first download)
 └── shaders/           <- enhancement shaders (created by install.ps1)

@@ -75,6 +75,7 @@ $Root        = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $MpvExe      = Join-Path $Root "mpv\mpv.exe"
 $ConfigDir   = ($Root -replace "\\", "/")
 $LastFolderFile = Join-Path $Root ".last-folder.txt"
+$QualityFile    = Join-Path $Root ".quality.txt"
 $ThumbDir    = Join-Path $Root ".thumbs"
 $LibraryDir  = Join-Path $Root "library"
 $YtDlp       = Join-Path $Root "mpv\yt-dlp.exe"
@@ -561,6 +562,174 @@ function Clear-History {
     Set-Status "History cleared" $SUCCESS
 }
 
+# ============================================================
+#  VIDEO QUALITY — picture settings (brightness / contrast /
+#  saturation / gamma). Shared with scripts/nj-quality.lua
+#  through .quality.txt, so the GUI and the player stay in
+#  sync (F2 / ALT+arrows during playback).
+# ============================================================
+
+function Read-Quality {
+    $q = @{ brightness = 5; contrast = 15; saturation = 20; gamma = 10; hue = 0 }
+    if (Test-Path $QualityFile) {
+        foreach ($line in @(Get-Content $QualityFile -ErrorAction SilentlyContinue)) {
+            if ($line -match '^\s*([A-Za-z_]+)\s*=\s*(-?\d+)\s*$') {
+                $k = $Matches[1]
+                $v = [int]$Matches[2]
+                if ($q.ContainsKey($k) -and $v -ge -100 -and $v -le 100) { $q[$k] = $v }
+            }
+        }
+    }
+    return $q
+}
+
+function Save-Quality {
+    param($q)
+    try {
+        $lines = @(
+            "brightness=$($q['brightness'])",
+            "contrast=$($q['contrast'])",
+            "saturation=$($q['saturation'])",
+            "gamma=$($q['gamma'])",
+            "hue=$($q['hue'])"
+        )
+        Set-Content -Path $QualityFile -Value $lines -Encoding ASCII
+    } catch { }
+}
+
+function Format-QualityValue {
+    param([int]$v)
+    if ($v -gt 0) { return "+$v" } else { return "$v" }
+}
+
+function Save-QualityFromBars {
+    if (-not $script:QualityBars) { return }
+    $q = @{}
+    foreach ($k in @("brightness", "contrast", "saturation", "gamma", "hue")) {
+        if ($script:QualityBars[$k]) { $q[$k] = [int]$script:QualityBars[$k].Value }
+    }
+    Save-Quality $q
+}
+
+function Show-QualityDialog {
+    $q = Read-Quality
+    $script:QualityBars = @{}
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "NJ Player - Video Quality"
+    $dlg.Size = New-Object System.Drawing.Size(500, 536)
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+    $dlg.ShowInTaskbar = $false
+    $dlg.BackColor = $INK
+
+    $titleLabel = New-Object System.Windows.Forms.Label
+    $titleLabel.Text = "VIDEO QUALITY"
+    $titleLabel.Location = New-Object System.Drawing.Point(28, 22)
+    $titleLabel.Size = New-Object System.Drawing.Size(300, 26)
+    $titleLabel.ForeColor = $TEXT_PRIMARY
+    $titleLabel.Font = New-Object System.Drawing.Font("Consolas", 14, [System.Drawing.FontStyle]::Bold)
+    $dlg.Controls.Add($titleLabel)
+
+    $titleAccent = New-Object System.Windows.Forms.Panel
+    $titleAccent.Location = New-Object System.Drawing.Point(28, 50)
+    $titleAccent.Size = New-Object System.Drawing.Size(120, 2)
+    $titleAccent.BackColor = $ACCENT
+    $dlg.Controls.Add($titleAccent)
+
+    $rows = @(
+        @{ Key = "brightness"; Label = "BRIGHTNESS" },
+        @{ Key = "contrast";   Label = "CONTRAST"   },
+        @{ Key = "saturation"; Label = "SATURATION" },
+        @{ Key = "gamma";      Label = "GAMMA"      },
+        @{ Key = "hue";        Label = "HUE"        }
+    )
+    $y = 76
+    foreach ($r in $rows) {
+        $lbl = New-Object System.Windows.Forms.Label
+        $lbl.Text = $r.Label
+        $lbl.Location = New-Object System.Drawing.Point(28, $y + 10)
+        $lbl.Size = New-Object System.Drawing.Size(110, 20)
+        $lbl.ForeColor = $TEXT_SECONDARY
+        $lbl.Font = New-Object System.Drawing.Font("Consolas", 9)
+        $dlg.Controls.Add($lbl)
+
+        $bar = New-Object System.Windows.Forms.TrackBar
+        $bar.Minimum = -100
+        $bar.Maximum = 100
+        $bar.Value = [Math]::Max(-100, [Math]::Min(100, [int]$q[$r.Key]))
+        $bar.TickFrequency = 25
+        $bar.SmallChange = 5
+        $bar.LargeChange = 10
+        $bar.Location = New-Object System.Drawing.Point(145, $y - 8)
+        $bar.Size = New-Object System.Drawing.Size(220, 44)
+
+        $val = New-Object System.Windows.Forms.Label
+        $val.Location = New-Object System.Drawing.Point(378, $y + 10)
+        $val.Size = New-Object System.Drawing.Size(70, 20)
+        $val.ForeColor = $TEXT_PRIMARY
+        $val.Font = New-Object System.Drawing.Font("Consolas", 10, [System.Drawing.FontStyle]::Bold)
+        $val.Text = Format-QualityValue $bar.Value
+
+        # NOTE: use $s (sender) inside handlers — $bar/$val are local to
+        # this loop and gone by the time the events fire.
+        $bar.Tag = @{ Key = $r.Key; Val = $val }
+        $bar.Add_ValueChanged({
+            param($s, $e)
+            $t = $s.Tag
+            if ($t -and $t.Val) { $t.Val.Text = Format-QualityValue $s.Value }
+        })
+        $bar.Add_MouseUp({
+            param($s, $e)
+            Save-QualityFromBars
+        })
+        $dlg.Controls.Add($bar)
+        $dlg.Controls.Add($val)
+        $script:QualityBars[$r.Key] = $bar
+        $y += 56
+    }
+
+    $boostBtn = New-NjButton "COLOR BOOST" 28 $y 150 34 -IsAccent $true
+    $boostBtn.Font = New-Object System.Drawing.Font("Consolas", 9, [System.Drawing.FontStyle]::Bold)
+    $boostBtn.Add_Click({
+        $script:QualityBars["brightness"].Value  = 5
+        $script:QualityBars["contrast"].Value    = 15
+        $script:QualityBars["saturation"].Value  = 20
+        $script:QualityBars["gamma"].Value       = 10
+        $script:QualityBars["hue"].Value         = 0
+        Save-QualityFromBars
+    })
+    $dlg.Controls.Add($boostBtn)
+
+    $neutralBtn = New-NjButton "NEUTRAL" 190 $y 120 34
+    $neutralBtn.Font = New-Object System.Drawing.Font("Consolas", 9)
+    $neutralBtn.Add_Click({
+        foreach ($k in @("brightness", "contrast", "saturation", "gamma", "hue")) {
+            $script:QualityBars[$k].Value = 0
+        }
+        Save-QualityFromBars
+    })
+    $dlg.Controls.Add($neutralBtn)
+
+    $doneBtn = New-NjButton "DONE" 322 $y 126 34
+    $doneBtn.Font = New-Object System.Drawing.Font("Consolas", 9, [System.Drawing.FontStyle]::Bold)
+    $doneBtn.Add_Click({ param($s, $e) $s.FindForm().Close() })
+    $dlg.Controls.Add($doneBtn)
+
+    $hintLabel = New-Object System.Windows.Forms.Label
+    $hintLabel.Text = "Applies to the next video you play.`r`nDuring playback: F2 = quality menu, ALT+arrows = quick tweak"
+    $hintLabel.Location = New-Object System.Drawing.Point(28, $y + 50)
+    $hintLabel.Size = New-Object System.Drawing.Size(440, 36)
+    $hintLabel.ForeColor = $TEXT_TERTIARY
+    $hintLabel.Font = New-Object System.Drawing.Font("Consolas", 8)
+    $dlg.Controls.Add($hintLabel)
+
+    $dlg.Add_FormClosing({ Save-QualityFromBars })
+    [void]$dlg.ShowDialog($form)
+}
+
 function Play-Link {
     $url = $linkBox.Text.Trim()
     if (-not $url) {
@@ -926,10 +1095,17 @@ $enhLabel.ForeColor = $TEXT_TERTIARY
 $enhLabel.Font = New-Object System.Drawing.Font("Consolas", 9)
 $controlsPanel.Controls.Add($enhLabel)
 
-$presetCombo = New-NjComboBox 16 36 318 32
+$presetCombo = New-NjComboBox 16 36 232 32
 foreach ($p in $Presets) { [void]$presetCombo.Items.Add($p.Icon + " " + $p.Name) }
 $presetCombo.SelectedIndex = 2   # Cinema default
 $controlsPanel.Controls.Add($presetCombo)
+
+# Picture settings (brightness / contrast / saturation / gamma)
+$pictureBtn = New-NjButton "PICTURE" 258 36 76 32
+$pictureBtn.Font = New-Object System.Drawing.Font("Consolas", 9, [System.Drawing.FontStyle]::Bold)
+$pictureBtn.Add_Click({ Show-QualityDialog })
+$controlsPanel.Controls.Add($pictureBtn)
+$script:NjTip.SetToolTip($pictureBtn, "Brightness, contrast, saturation, gamma")
 
 # PLAY button (large, cinematic)
 $playBtn = New-Object System.Windows.Forms.Button
