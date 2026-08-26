@@ -11,7 +11,7 @@ param(
     [string]$FilePath
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 # Load assemblies FIRST, before any trap that might use them
 try {
@@ -407,17 +407,21 @@ function Set-Folder([string]$path) {
 }
 
 function Refresh-VideoList() {
-    $folder = $folderBox.Text
-    $videos = Get-Videos $folder $recursiveCheck.Checked
-    $videoList.Items.Clear()
-    foreach ($v in $videos) {
-        $display = if ($recursiveCheck.Checked) { Get-RelativePath $folder $v.FullName } else { $v.Name }
-        [void]$videoList.Items.Add([pscustomobject]@{ Name = $display; File = $v })
-    }
-    if ($videos.Count -eq 0) {
-        Set-Status "No videos found" $TEXT_TERTIARY
-    } else {
-        Set-Status ("$($videos.Count) videos  |  Select and play") $TEXT_SECONDARY
+    try {
+        $folder = $folderBox.Text
+        $videos = Get-Videos $folder $recursiveCheck.Checked
+        $videoList.Items.Clear()
+        foreach ($v in $videos) {
+            $display = if ($recursiveCheck.Checked) { Get-RelativePath $folder $v.FullName } else { $v.Name }
+            [void]$videoList.Items.Add([pscustomobject]@{ Name = $display; File = $v })
+        }
+        if ($videos.Count -eq 0) {
+            Set-Status "No videos found" $TEXT_TERTIARY
+        } else {
+            Set-Status ("$($videos.Count) videos  |  Select and play") $TEXT_SECONDARY
+        }
+    } catch {
+        Set-Status "Error loading videos" $ERR
     }
 }
 
@@ -1002,9 +1006,9 @@ $recursiveCheck.Location = New-Object System.Drawing.Point(16, 326)
 $recursiveCheck.Size = New-Object System.Drawing.Size(100, 24)
 $recursiveCheck.ForeColor = $TEXT_TERTIARY
 $recursiveCheck.Font = New-Object System.Drawing.Font("Consolas", 9)
-$recursiveCheck.Checked = $true
-$recursiveCheck.Add_CheckedChanged({ Refresh-VideoList })
+$recursiveCheck.Checked = $false
 $mainPanel.Controls.Add($recursiveCheck)
+$recursiveCheck.Add_CheckedChanged({ Refresh-VideoList })
 
 # Queue section
 $queueDivider = New-Object System.Windows.Forms.Panel
@@ -1227,8 +1231,12 @@ $thumbTimer.Start()
 #  RUN
 # ============================================================
 $form.Add_Shown({
-    $folderBox.Text = Load-LastFolder
-    Refresh-VideoList
+    try {
+        $folderBox.Text = Load-LastFolder
+        Refresh-VideoList
+    } catch {
+        Set-Status "Ready" $TEXT_SECONDARY
+    }
     
     # Cinematic entrance animation
     $form.Opacity = 0
